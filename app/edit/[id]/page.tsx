@@ -8,6 +8,7 @@ import { Trash, X, Plus, Save, ArrowLeft, Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "@/components/ui/use-toast"
 import { Toaster } from "@/components/ui/toaster"
+import { NOTEBOOK_PATH } from "@/lib/config"
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ type Note = {
   timestamp: string
   preview?: string
   lastUpdated: number
+  filePath: string
 }
 
 // 定义标签类型
@@ -40,6 +42,7 @@ type Tag = {
 type Notebook = {
   id: string
   name: string
+  path: string
 }
 
 // 生成笔记预览
@@ -85,7 +88,7 @@ const CustomButton = ({
 export default function EditPage({ params }: { params: Usable<{ id: string }> }) {
   const router = useRouter()
   const unwrappedParams = React.use(params)
-  const noteId = unwrappedParams.id
+  const noteId = decodeURIComponent(unwrappedParams.id)
 
   // 笔记数据
   const [notes, setNotes] = useState<Note[]>([])
@@ -104,38 +107,29 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [lastSaved, setLastSaved] = useState<string | null>(null)
 
-  // 从localStorage加载数据
+  // 从文件系统加载数据
   useEffect(() => {
-    const savedNotes = localStorage.getItem("notes")
-    const savedTags = localStorage.getItem("tags")
-    const savedNotebooks = localStorage.getItem("notebooks")
-
-    if (savedNotes) {
-      const parsedNotes = JSON.parse(savedNotes)
-      setNotes(parsedNotes)
-
-      // 查找当前笔记
-      const currentNote = parsedNotes.find((note: Note) => note.id === noteId)
-      if (currentNote) {
-        setEditingNote({ ...currentNote })
-      } else {
-        // 如果找不到笔记，返回首页
+    const loadNote = async () => {
+      try {
+        // 从 API 获取笔记内容
+        const response = await fetch(`/api/notes?id=${encodeURIComponent(noteId)}`)
+        if (!response.ok) {
+          throw new Error('获取笔记失败')
+        }
+        const note = await response.json()
+        setEditingNote(note)
+      } catch (error) {
+        console.error('加载笔记时出错:', error)
         toast({
-          title: "笔记不存在",
-          description: "无法找到请求的笔记",
-          variant: "destructive",
+          title: "加载笔记失败",
+          description: "无法读取笔记文件",
+          variant: "destructive"
         })
         router.push("/")
       }
     }
 
-    if (savedTags) {
-      setAvailableTags(JSON.parse(savedTags))
-    }
-
-    if (savedNotebooks) {
-      setNotebooks(JSON.parse(savedNotebooks))
-    }
+    loadNote()
   }, [noteId, router])
 
   // 自动保存功能
@@ -160,40 +154,117 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
   }, [editingNote, isEditing])
 
   // 自动保存
-  const autoSave = () => {
+  const autoSave = async () => {
     if (!editingNote) return
 
-    // 从 localStorage 获取最新的笔记数据
-    const savedNotes = localStorage.getItem("notes")
-    if (!savedNotes) return
+    try {
+      // 调用 API 更新笔记
+      const response = await fetch('/api/notes', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingNote.filePath,
+          content: editingNote.content
+        }),
+      })
 
-    const currentNotes = JSON.parse(savedNotes)
+      if (!response.ok) {
+        throw new Error('自动保存失败')
+      }
 
-    // 生成预览文本
-    const preview = generatePreview(editingNote.content)
-
-    // 更新时间戳和最后更新时间
-    const now = Date.now()
-    const updatedNote = {
-      ...editingNote,
-      preview,
-      timestamp: updateTimestamp(),
-      lastUpdated: now,
+      const updatedNote = await response.json()
+      setLastSaved(`自动保存于 ${new Date().toLocaleTimeString()}`)
+      setEditingNote(updatedNote)
+    } catch (error) {
+      console.error('自动保存时出错:', error)
+      toast({
+        title: "自动保存失败",
+        description: "无法保存笔记文件",
+        variant: "destructive"
+      })
     }
+  }
 
-    // 更新笔记列表
-    const updatedNotes = currentNotes.map((note: Note) => 
-      note.id === updatedNote.id ? updatedNote : note
-    )
+  // 保存编辑后的笔记
+  const saveNote = async () => {
+    if (!editingNote) return
 
-    // 保存到 localStorage 和状态
-    localStorage.setItem("notes", JSON.stringify(updatedNotes))
-    setNotes(updatedNotes)
+    try {
+      // 调用 API 更新笔记
+      const response = await fetch('/api/notes', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingNote.filePath,
+          content: editingNote.content
+        }),
+      })
 
-    setLastSaved(`自动保存于 ${new Date().toLocaleTimeString()}`)
+      if (!response.ok) {
+        throw new Error('保存失败')
+      }
 
-    // 不退出编辑模式，只更新编辑中的笔记
-    setEditingNote(updatedNote)
+      const updatedNote = await response.json()
+      setEditingNote(updatedNote)
+      setIsEditing(false)
+
+      // 显示成功提示
+      toast({
+        title: "保存成功",
+        description: "笔记已保存",
+        duration: 3000,
+      })
+    } catch (error) {
+      console.error('保存笔记时出错:', error)
+      toast({
+        title: "保存失败",
+        description: "无法保存笔记文件",
+        variant: "destructive"
+      })
+    }
+  }
+
+  // 删除笔记
+  const deleteNote = async () => {
+    if (!editingNote) return
+
+    try {
+      // 调用 API 删除笔记
+      const response = await fetch('/api/notes', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingNote.filePath
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('删除失败')
+      }
+
+      // 显示成功提示
+      toast({
+        title: "删除成功",
+        description: "笔记已删除",
+        duration: 3000,
+      })
+
+      // 返回首页
+      router.push("/")
+    } catch (error) {
+      console.error('删除笔记时出错:', error)
+      toast({
+        title: "删除失败",
+        description: "无法删除笔记文件",
+        variant: "destructive"
+      })
+    }
   }
 
   // 取消编辑
@@ -206,64 +277,6 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
     } else {
       router.push("/")
     }
-  }
-
-  // 保存编辑后的笔记
-  const saveNote = () => {
-    console.log('开始保存笔记...')
-    if (!editingNote) {
-      console.log('错误：editingNote 为空')
-      return
-    }
-
-    // 从 localStorage 获取最新的笔记数据
-    const savedNotes = localStorage.getItem("notes")
-    if (!savedNotes) {
-      console.log('错误：localStorage 中没有笔记数据')
-      return
-    }
-
-    console.log('从 localStorage 获取的笔记数据:', JSON.parse(savedNotes))
-    const currentNotes = JSON.parse(savedNotes)
-
-    // 生成预览文本
-    const preview = generatePreview(editingNote.content)
-    console.log('生成的预览文本:', preview)
-
-    // 更新时间戳和最后更新时间
-    const now = Date.now()
-    const updatedNote = {
-      ...editingNote,
-      preview,
-      timestamp: updateTimestamp(),
-      lastUpdated: now,
-    }
-    console.log('更新后的笔记数据:', updatedNote)
-
-    // 更新笔记列表
-    const updatedNotes = currentNotes.map((note: Note) => 
-      note.id === updatedNote.id ? updatedNote : note
-    )
-    console.log('更新后的笔记列表:', updatedNotes)
-
-    // 保存到 localStorage 和状态
-    localStorage.setItem("notes", JSON.stringify(updatedNotes))
-    setNotes(updatedNotes)
-    console.log('笔记已保存到 localStorage 和状态')
-
-    // 更新标签系统
-    updateTagSystem()
-
-    // 显示成功提示
-    toast({
-      title: "笔记已保存",
-      description: "您的更改已成功保存。",
-      duration: 3000,
-    })
-
-    // 返回首页
-    console.log('保存完成，准备返回首页')
-    router.push("/")
   }
 
   // 更新标签系统 - 检查并移除未使用的标签
@@ -368,74 +381,6 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
     }
 
     setNewTag("")
-  }
-
-  // 删除笔记
-  const deleteNote = () => {
-    setDialogOpen(true)
-  }
-
-  // 确认删除笔记
-  const confirmDeleteNote = () => {
-    console.log('开始删除笔记...')
-    // 从 localStorage 获取最新的笔记数据
-    const savedNotes = localStorage.getItem("notes")
-    if (!savedNotes) {
-      console.log('错误：localStorage 中没有笔记数据')
-      return
-    }
-
-    console.log('从 localStorage 获取的笔记数据:', JSON.parse(savedNotes))
-    const currentNotes = JSON.parse(savedNotes)
-    const updatedNotes = currentNotes.filter((note: Note) => note.id !== noteId)
-    console.log('过滤后的笔记列表:', updatedNotes)
-    
-    // 更新状态和 localStorage
-    setNotes(updatedNotes)
-    localStorage.setItem("notes", JSON.stringify(updatedNotes))
-    console.log('笔记已从 localStorage 和状态中删除')
-
-    setDialogOpen(false)
-
-    // 更新标签系统
-    const deletedNote = currentNotes.find((note: Note) => note.id === noteId)
-    if (deletedNote) {
-      console.log('找到要删除的笔记:', deletedNote)
-      updateTagsAfterNoteDeletion(deletedNote, updatedNotes)
-    } else {
-      console.log('未找到要删除的笔记')
-    }
-
-    // 显示成功提示
-    toast({
-      title: "笔记已删除",
-      description: "笔记已成功删除。",
-      duration: 3000,
-    })
-
-    // 返回首页
-    console.log('删除完成，准备返回首页')
-    router.push("/")
-  }
-
-  // 在删除笔记后更新标签
-  const updateTagsAfterNoteDeletion = (deletedNote: Note, remainingNotes: Note[]) => {
-    console.log('开始更新标签系统...')
-    // 获取所有剩余笔记中使用的标签
-    const usedTags = new Set<string>()
-
-    remainingNotes.forEach((note) => {
-      note.tags.forEach((tag) => usedTags.add(tag))
-    })
-    console.log('使用的标签:', Array.from(usedTags))
-
-    // 过滤掉未使用的标签
-    const updatedTags = availableTags.filter((tag) => usedTags.has(tag.name))
-    console.log('更新后的标签列表:', updatedTags)
-    
-    setAvailableTags(updatedTags)
-    localStorage.setItem("tags", JSON.stringify(updatedTags))
-    console.log('标签系统更新完成')
   }
 
   if (!editingNote) {
@@ -590,7 +535,7 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
             <CustomButton variant="outline" onClick={() => setDialogOpen(false)} className="px-3 py-1.5 text-sm">
               取消
             </CustomButton>
-            <CustomButton variant="destructive" onClick={confirmDeleteNote} className="px-3 py-1.5 text-sm">
+            <CustomButton variant="destructive" onClick={deleteNote} className="px-3 py-1.5 text-sm">
               删除
             </CustomButton>
           </DialogFooter>

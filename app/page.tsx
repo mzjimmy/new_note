@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { PlusCircle, ChevronDown, ChevronRight, File, Hash, Search, Folder, FolderPlus, X, Edit } from "lucide-react"
@@ -9,6 +8,9 @@ import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "@/components/ui/use-toast"
 import { Toaster } from "@/components/ui/toaster"
+import { NOTEBOOK_PATH } from "@/lib/config"
+import { readMarkdownFiles, readFileContent, writeFileContent, getDirectoryStructure } from "@/lib/fs-utils"
+import path from "path"
 
 // 定义笔记类型
 type Note = {
@@ -20,6 +22,8 @@ type Note = {
   timestamp: string
   preview?: string
   lastUpdated: number
+  filePath: string
+  type: 'markdown' | 'image'
 }
 
 // 定义标签类型
@@ -32,6 +36,7 @@ type Tag = {
 type Notebook = {
   id: string
   name: string
+  path: string
 }
 
 // 生成笔记预览
@@ -128,73 +133,56 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [activeFilter, setActiveFilter] = useState<string | null>(null)
 
-  // 从localStorage加载数据
+  // 从文件系统加载数据
   useEffect(() => {
-    const loadData = () => {
-      console.log('首页开始加载数据...')
-      const savedNotes = localStorage.getItem("notes")
-      const savedTags = localStorage.getItem("tags")
-      const savedNotebooks = localStorage.getItem("notebooks")
-
-      if (savedNotes) {
-        const parsedNotes = JSON.parse(savedNotes)
-        console.log('从 localStorage 加载的笔记数据:', parsedNotes)
-        // 只在数据确实发生变化时更新状态
-        if (JSON.stringify(notes) !== JSON.stringify(parsedNotes)) {
-          setNotes(parsedNotes)
+    const loadData = async () => {
+      try {
+        console.log('开始从文件系统加载数据...')
+        
+        // 从 API 获取笔记数据
+        const response = await fetch('/api/notes')
+        if (!response.ok) {
+          throw new Error('获取笔记数据失败')
         }
-      } else {
-        // 如果没有保存的笔记，创建一个默认笔记本和空笔记列表
-        const defaultNotebook = { id: "default", name: "默认笔记本" }
-        setNotebooks([defaultNotebook])
-        localStorage.setItem("notebooks", JSON.stringify([defaultNotebook]))
-        setNotes([])
-        localStorage.setItem("notes", JSON.stringify([]))
-      }
+        const notes = await response.json()
+        setNotes(notes)
 
-      if (savedTags) {
-        const parsedTags = JSON.parse(savedTags)
-        console.log('从 localStorage 加载的标签数据:', parsedTags)
-        // 只在数据确实发生变化时更新状态
-        if (JSON.stringify(availableTags) !== JSON.stringify(parsedTags)) {
-          setAvailableTags(parsedTags)
-        }
-      } else {
-        setAvailableTags([])
-        localStorage.setItem("tags", JSON.stringify([]))
-      }
+        // 从笔记数据中提取笔记本和标签
+        const notebooksSet = new Set<string>()
+        const tagsSet = new Set<string>()
 
-      if (savedNotebooks) {
-        const parsedNotebooks = JSON.parse(savedNotebooks)
-        console.log('从 localStorage 加载的笔记本数据:', parsedNotebooks)
-        // 只在数据确实发生变化时更新状态
-        if (JSON.stringify(notebooks) !== JSON.stringify(parsedNotebooks)) {
-          setNotebooks(parsedNotebooks)
-        }
-      } else {
-        const defaultNotebook = { id: "default", name: "默认笔记本" }
-        setNotebooks([defaultNotebook])
-        localStorage.setItem("notebooks", JSON.stringify([defaultNotebook]))
+        notes.forEach((note: Note) => {
+          notebooksSet.add(note.notebookId)
+          note.tags.forEach(tag => tagsSet.add(tag))
+        })
+
+        const newNotebooks: Notebook[] = Array.from(notebooksSet).map(id => ({
+          id,
+          name: id,
+          path: path.join(NOTEBOOK_PATH, id)
+        }))
+
+        const newTags: Tag[] = Array.from(tagsSet).map((name, index) => ({
+          id: `tag-${index}`,
+          name
+        }))
+
+        setNotebooks(newNotebooks)
+        setAvailableTags(newTags)
+        
+        console.log('数据加载完成')
+      } catch (error) {
+        console.error('加载数据时出错:', error)
+        toast({
+          title: "加载数据失败",
+          description: "无法从文件系统读取笔记数据",
+          variant: "destructive"
+        })
       }
     }
 
-    // 初始加载
     loadData()
-
-    // 监听路由变化
-    const handleRouteChange = () => {
-      console.log('路由变化，重新加载数据...')
-      loadData()
-    }
-
-    // 添加路由变化监听
-    window.addEventListener('popstate', handleRouteChange)
-
-    // 清理函数
-    return () => {
-      window.removeEventListener('popstate', handleRouteChange)
-    }
-  }, []) // 移除依赖项，使用事件监听
+  }, [])
 
   // 保存数据到localStorage
   useEffect(() => {
@@ -270,39 +258,53 @@ export default function HomePage() {
   }
 
   // 创建新笔记
-  const createNewNote = () => {
-    // 确定默认笔记本
-    let defaultNotebookId = "default"
-    if (activeFilter && activeFilter.startsWith("notebook:")) {
-      defaultNotebookId = activeFilter.substring(9)
+  const createNewNote = async () => {
+    try {
+      // 确定默认笔记本
+      let defaultNotebookId = "default"
+      if (activeFilter && activeFilter.startsWith("notebook:")) {
+        defaultNotebookId = activeFilter.substring(9)
+      }
+
+      // 调用 API 创建新笔记
+      const response = await fetch('/api/notes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: "新笔记",
+          content: "",
+          notebookId: defaultNotebookId
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('创建笔记失败')
+      }
+
+      const newNote = await response.json()
+
+      // 更新状态
+      setNotes([newNote, ...notes])
+
+      // 导航到编辑页面
+      router.push(`/edit/${encodeURIComponent(newNote.filePath)}`)
+
+      // 显示成功提示
+      toast({
+        title: "已创建新笔记",
+        description: "您可以开始编辑新笔记了。",
+        duration: 3000,
+      })
+    } catch (error) {
+      console.error('创建笔记时出错:', error)
+      toast({
+        title: "创建笔记失败",
+        description: "无法创建新笔记文件",
+        variant: "destructive"
+      })
     }
-
-    const newNote: Note = {
-      id: `note-${Date.now()}`,
-      title: "新笔记",
-      content: "",
-      tags: [],
-      notebookId: defaultNotebookId,
-      timestamp: updateTimestamp(),
-      preview: "",
-      lastUpdated: Date.now(),
-    }
-
-    const updatedNotes = [newNote, ...notes]
-    setNotes(updatedNotes)
-
-    // 保存到localStorage
-    localStorage.setItem("notes", JSON.stringify(updatedNotes))
-
-    // 导航到编辑页面
-    router.push(`/edit/${newNote.id}`)
-
-    // 显示成功提示
-    toast({
-      title: "已创建新笔记",
-      description: "您可以开始编辑新笔记了。",
-      duration: 3000,
-    })
   }
 
   // 设置过滤器
@@ -488,10 +490,19 @@ export default function HomePage() {
                   onClick={() => openNote(note.id)}
                 >
                   <h3 className="font-medium text-lg mb-2 pr-8">{note.title}</h3>
-                  {note.content && (
+                  {note.type === 'markdown' && note.content && (
                     <p className="text-sm text-gray-600 line-clamp-3 mb-3">
                       {note.preview || generatePreview(note.content)}
                     </p>
+                  )}
+                  {note.type === 'image' && (
+                    <div className="relative w-full h-40 mb-3">
+                      <img
+                        src={`/api/images?path=${encodeURIComponent(note.filePath)}`}
+                        alt={note.title}
+                        className="absolute inset-0 w-full h-full object-cover rounded-lg"
+                      />
+                    </div>
                   )}
                   {note.tags.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1 mb-3">

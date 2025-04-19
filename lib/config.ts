@@ -1,0 +1,1 @@
+export const NOTEBOOK_PATH = '/Users/xuezhirong/Documents/GitHub/AI-Progress-Book' 
