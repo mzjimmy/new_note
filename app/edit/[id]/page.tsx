@@ -21,7 +21,7 @@ import { Usable } from "react"
 import path from "path"
 import { generateTagsFromContent } from "@/lib/llm"
 import { extractFrontmatter, updateFrontmatter } from "@/lib/frontmatter"
-import { Chatbot } from "@/components/chatbot"
+import { Chatbot, Message } from "@/components/chatbot"
 
 // 定义笔记类型
 type Note = {
@@ -709,13 +709,33 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
           </DialogContent>
         </Dialog>
 
-        {/* 提示消息 */}
+        {editingNote && (
+          <>
+            <div className="fixed bottom-4 right-4 z-[9999]">
+              <Chatbot 
+                context={`# ${editingNote.title}\n${editingNote.content}`}
+                onContextChange={(context: string) => {
+                  console.log('Chatbot上下文已更新:', context);
+                }}
+                onMessage={(message: Message) => {
+                  console.log('Chatbot消息:', message);
+                }}
+                onStateChange={(state: { isOpen: boolean; isLoading: boolean }) => {
+                  console.log('Chatbot状态变化:', state);
+                }}
+              />
+            </div>
+            <div className="fixed bottom-4 left-4 z-[9999] bg-white p-4 rounded-lg shadow-lg max-w-md">
+              <h3 className="text-sm font-medium mb-2">Chatbot上下文:</h3>
+              <pre className="text-xs overflow-auto max-h-40">
+                {`# ${editingNote.title}\n${editingNote.content}`}
+              </pre>
+            </div>
+          </>
+        )}
+
         <Toaster />
       </div>
-
-      {currentNote && (
-        <Chatbot context={`# ${currentNote.title}\n${currentNote.content}`} />
-      )}
     </div>
   )
 }

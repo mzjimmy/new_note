@@ -5,21 +5,34 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageSquare, X } from "lucide-react";
 
-interface Message {
+export interface Message {
   role: 'user' | 'assistant';
   content: string;
 }
 
 interface ChatbotProps {
   context: string;
+  onContextChange?: (context: string) => void;
+  onMessage?: (message: Message) => void;
+  onStateChange?: (state: { isOpen: boolean; isLoading: boolean }) => void;
 }
 
-export function Chatbot({ context }: ChatbotProps) {
+export function Chatbot({ context, onContextChange, onMessage, onStateChange }: ChatbotProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 通知状态变化
+  useEffect(() => {
+    onStateChange?.({ isOpen, isLoading });
+  }, [isOpen, isLoading, onStateChange]);
+
+  // 通知上下文变化
+  useEffect(() => {
+    onContextChange?.(context);
+  }, [context, onContextChange]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -35,6 +48,7 @@ export function Chatbot({ context }: ChatbotProps) {
 
     const userMessage: Message = { role: 'user', content: input };
     setMessages(prev => [...prev, userMessage]);
+    onMessage?.(userMessage);
     setInput('');
     setIsLoading(true);
 
@@ -53,6 +67,7 @@ export function Chatbot({ context }: ChatbotProps) {
       const data = await response.json();
       const assistantMessage: Message = { role: 'assistant', content: data.content };
       setMessages(prev => [...prev, assistantMessage]);
+      onMessage?.(assistantMessage);
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -61,9 +76,9 @@ export function Chatbot({ context }: ChatbotProps) {
   };
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-4 right-4 z-[9999]">
       {isOpen ? (
-        <Card className="w-[400px] h-[600px] flex flex-col overflow-hidden">
+        <Card className="w-[400px] h-[600px] flex flex-col overflow-hidden shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between pb-2 shrink-0">
             <CardTitle>AI 助手</CardTitle>
             <Button
@@ -103,10 +118,10 @@ export function Chatbot({ context }: ChatbotProps) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="输入你的问题..."
-                className="flex-1"
+                className="flex-1 min-h-[40px] resize-none"
                 disabled={isLoading}
               />
-              <Button type="submit" disabled={isLoading}>
+              <Button type="submit" disabled={isLoading} className="shrink-0">
                 {isLoading ? '发送中...' : '发送'}
               </Button>
             </form>
@@ -115,7 +130,7 @@ export function Chatbot({ context }: ChatbotProps) {
       ) : (
         <Button
           size="icon"
-          className="rounded-full w-12 h-12"
+          className="rounded-full w-12 h-12 shadow-lg hover:shadow-xl transition-shadow"
           onClick={() => setIsOpen(true)}
         >
           <MessageSquare className="h-6 w-6" />
