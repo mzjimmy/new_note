@@ -95,9 +95,21 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
   const [availableTags, setAvailableTags] = useState<Tag[]>([])
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
 
+  // 初始化一个默认的笔记对象
+  const defaultNote: Note = {
+    id: "",
+    title: "",
+    content: "",
+    tags: [],
+    notebookId: "",
+    timestamp: "",
+    lastUpdated: Date.now(),
+    filePath: ""
+  }
+
   // 编辑模式状态
   const [isEditing, setIsEditing] = useState(true)
-  const [editingNote, setEditingNote] = useState<Note | null>(null)
+  const [editingNote, setEditingNote] = useState<Note>(defaultNote)
   const [newTag, setNewTag] = useState("")
 
   // 对话框状态
@@ -117,7 +129,17 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
           throw new Error('获取笔记失败')
         }
         const note = await response.json()
-        setEditingNote(note)
+        // 确保所有必需的字段都存在
+        setEditingNote({
+          ...defaultNote,
+          ...note,
+          tags: note.tags || [],
+          title: note.title || "",
+          content: note.content || "",
+          notebookId: note.notebookId || "",
+          timestamp: note.timestamp || "",
+          filePath: note.filePath || ""
+        })
       } catch (error) {
         console.error('加载笔记时出错:', error)
         toast({
@@ -155,9 +177,17 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
 
   // 自动保存
   const autoSave = async () => {
-    if (!editingNote) return
+    if (!editingNote) {
+      console.error('自动保存失败：editingNote 为空')
+      return
+    }
 
     try {
+      console.log('开始自动保存...', {
+        filePath: editingNote.filePath,
+        content: editingNote.content
+      })
+
       // 调用 API 更新笔记
       const response = await fetch('/api/notes', {
         method: 'PUT',
@@ -166,22 +196,28 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
         },
         body: JSON.stringify({
           id: editingNote.filePath,
-          content: editingNote.content
+          content: editingNote.content,
+          title: editingNote.title,
+          tags: editingNote.tags,
+          notebookId: editingNote.notebookId
         }),
       })
 
       if (!response.ok) {
-        throw new Error('自动保存失败')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(`自动保存失败: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`)
       }
 
       const updatedNote = await response.json()
+      console.log('自动保存成功:', updatedNote)
+      
       setLastSaved(`自动保存于 ${new Date().toLocaleTimeString()}`)
       setEditingNote(updatedNote)
     } catch (error) {
       console.error('自动保存时出错:', error)
       toast({
         title: "自动保存失败",
-        description: "无法保存笔记文件",
+        description: error instanceof Error ? error.message : "无法保存笔记文件",
         variant: "destructive"
       })
     }
@@ -456,11 +492,14 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
 
         {/* 标签区域 */}
         <div className="flex flex-wrap gap-2 mb-4">
-          {editingNote.tags.map((tag, index) => (
-            <div key={index} className="flex items-center px-3 py-1 rounded-full bg-gray-100">
-              <span>{tag}</span>
-              <button onClick={() => removeTagFromNote(tag)} className="ml-1 text-gray-500 hover:text-gray-700">
-                <X className="w-3 h-3" />
+          {editingNote?.tags?.map((tag) => (
+            <div key={tag} className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">{tag}</span>
+              <button
+                onClick={() => removeTagFromNote(tag)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ×
               </button>
             </div>
           ))}
