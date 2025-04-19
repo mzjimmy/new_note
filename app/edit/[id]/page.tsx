@@ -18,6 +18,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Usable } from "react"
+import path from "path"
+import { generateTagsFromContent } from "@/lib/llm"
+import { extractFrontmatter, updateFrontmatter } from "@/lib/frontmatter"
 
 // 定义笔记类型
 type Note = {
@@ -119,32 +122,55 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [lastSaved, setLastSaved] = useState<string | null>(null)
 
+  // 生成标签状态
+  const [isGeneratingTags, setIsGeneratingTags] = useState(false)
+
   // 从文件系统加载数据
   useEffect(() => {
     const loadNote = async () => {
       try {
+        console.log('开始加载笔记，ID:', noteId)
+        
         // 从 API 获取笔记内容
         const response = await fetch(`/api/notes?id=${encodeURIComponent(noteId)}`)
         if (!response.ok) {
-          throw new Error('获取笔记失败')
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(`获取笔记失败: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`)
         }
+        
         const note = await response.json()
-        // 确保所有必需的字段都存在
-        setEditingNote({
+        console.log('API 返回的笔记数据:', note)
+        
+        // 确保所有必需字段都存在
+        if (!note || typeof note !== 'object') {
+          throw new Error('笔记数据格式错误')
+        }
+
+        if (!note.filePath) {
+          throw new Error('笔记文件路径为空')
+        }
+
+        // 从内容中提取 frontmatter 标签
+        const { tags } = extractFrontmatter(note.content)
+
+        // 设置编辑笔记
+        const updatedNote = {
           ...defaultNote,
           ...note,
-          tags: note.tags || [],
-          title: note.title || "",
-          content: note.content || "",
-          notebookId: note.notebookId || "",
-          timestamp: note.timestamp || "",
-          filePath: note.filePath || ""
-        })
+          filePath: note.filePath,
+          title: note.title || path.basename(note.filePath, '.md'),
+          content: note.content || '',
+          tags: tags || [],
+          notebookId: note.notebookId || 'default'
+        }
+        
+        console.log('设置编辑笔记:', updatedNote)
+        setEditingNote(updatedNote)
       } catch (error) {
         console.error('加载笔记时出错:', error)
         toast({
           title: "加载笔记失败",
-          description: "无法读取笔记文件",
+          description: error instanceof Error ? error.message : "无法读取笔记文件",
           variant: "destructive"
         })
         router.push("/")
@@ -225,9 +251,44 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
 
   // 保存编辑后的笔记
   const saveNote = async () => {
-    if (!editingNote) return
+    if (!editingNote) {
+      console.error('保存失败：editingNote 为空')
+      toast({
+        title: "保存失败",
+        description: "笔记数据为空",
+        variant: "destructive"
+      })
+      return
+    }
+
+    // 检查必需字段
+    if (!editingNote.filePath) {
+      console.error('保存失败：filePath 为空', editingNote)
+      toast({
+        title: "保存失败",
+        description: "笔记文件路径为空",
+        variant: "destructive"
+      })
+      return
+    }
 
     try {
+      console.log('开始保存笔记...', {
+        filePath: editingNote.filePath,
+        content: editingNote.content,
+        title: editingNote.title,
+        tags: editingNote.tags,
+        notebookId: editingNote.notebookId
+      })
+
+      // 构建完整的文件路径
+      const filePath = editingNote.filePath.startsWith('/') 
+        ? editingNote.filePath 
+        : path.join(NOTEBOOK_PATH, editingNote.filePath)
+
+      // 确保内容包含最新的 frontmatter
+      const contentWithFrontmatter = updateFrontmatter(editingNote.content, editingNote)
+
       // 调用 API 更新笔记
       const response = await fetch('/api/notes', {
         method: 'PUT',
@@ -235,16 +296,22 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: editingNote.filePath,
-          content: editingNote.content
+          id: filePath,
+          content: contentWithFrontmatter,
+          title: editingNote.title || path.basename(filePath, '.md'),
+          tags: editingNote.tags || [],
+          notebookId: editingNote.notebookId || 'default'
         }),
       })
 
       if (!response.ok) {
-        throw new Error('保存失败')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(`保存失败: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`)
       }
 
       const updatedNote = await response.json()
+      console.log('保存成功:', updatedNote)
+      
       setEditingNote(updatedNote)
       setIsEditing(false)
 
@@ -258,7 +325,7 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
       console.error('保存笔记时出错:', error)
       toast({
         title: "保存失败",
-        description: "无法保存笔记文件",
+        description: error instanceof Error ? error.message : "无法保存笔记文件",
         variant: "destructive"
       })
     }
@@ -419,6 +486,55 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
     setNewTag("")
   }
 
+  // 生成标签
+  const handleGenerateTags = async () => {
+    if (!editingNote?.content) {
+      toast({
+        title: "无法生成标签",
+        description: "请先输入笔记内容",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setIsGeneratingTags(true)
+    try {
+      const generatedTags = await generateTagsFromContent(editingNote.content)
+      
+      // 添加新生成的标签
+      const updatedTags = [...editingNote.tags]
+      generatedTags.forEach(tag => {
+        if (!updatedTags.includes(tag)) {
+          updatedTags.push(tag)
+        }
+      })
+
+      // 更新笔记内容和标签
+      const updatedNote = {
+        ...editingNote,
+        tags: updatedTags,
+        content: updateFrontmatter(editingNote.content, { ...editingNote, tags: updatedTags })
+      }
+
+      setEditingNote(updatedNote)
+
+      toast({
+        title: "标签生成成功",
+        description: `已添加 ${generatedTags.length} 个新标签`,
+        duration: 3000,
+      })
+    } catch (error) {
+      console.error("生成标签时出错:", error)
+      toast({
+        title: "生成标签失败",
+        description: error instanceof Error ? error.message : "生成标签时发生错误",
+        variant: "destructive"
+      })
+    } finally {
+      setIsGeneratingTags(false)
+    }
+  }
+
   if (!editingNote) {
     return <div className="flex items-center justify-center h-screen">加载中...</div>
   }
@@ -431,7 +547,12 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
         </CustomButton>
 
         <div className="flex space-x-2">
-          <CustomButton variant="outline" className="flex items-center space-x-1 px-3 py-1.5 text-sm">
+          <CustomButton 
+            variant="outline" 
+            onClick={handleGenerateTags}
+            disabled={isGeneratingTags}
+            className="flex items-center space-x-1 px-3 py-1.5 text-sm"
+          >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path
                 d="M12 4V20M4 12H20"
@@ -441,7 +562,7 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
                 strokeLinejoin="round"
               />
             </svg>
-            <span>AI 生成</span>
+            <span>{isGeneratingTags ? "生成中..." : "AI 生成"}</span>
           </CustomButton>
           <CustomButton variant="outline" className="flex items-center space-x-1 px-3 py-1.5 text-sm">
             <Clock className="w-4 h-4" />

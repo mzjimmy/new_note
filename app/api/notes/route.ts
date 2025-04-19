@@ -128,15 +128,74 @@ export async function POST(request: Request) {
 // 更新笔记
 export async function PUT(request: Request) {
   try {
-    const { id, content } = await request.json()
+    const body = await request.json()
+    console.log('收到更新请求:', body)
 
-    await fs.writeFile(id, content)
+    const { id, content, title, tags, notebookId } = body
 
-    return NextResponse.json({
-      id,
-      content,
-      lastUpdated: Date.now()
-    })
+    if (!id) {
+      console.error('更新失败：id 为空')
+      return NextResponse.json({ error: '笔记 ID 为空' }, { status: 400 })
+    }
+
+    // 确保文件存在
+    try {
+      await fs.access(id)
+      console.log('文件存在:', id)
+    } catch (error) {
+      console.error('文件不存在:', id)
+      return NextResponse.json({ error: '笔记文件不存在' }, { status: 404 })
+    }
+
+    // 更新文件内容
+    try {
+      await fs.writeFile(id, content || '')
+      console.log('文件内容已更新')
+    } catch (error) {
+      console.error('更新文件内容失败:', error)
+      return NextResponse.json({ error: '无法更新文件内容' }, { status: 500 })
+    }
+
+    // 如果需要重命名文件（标题改变）
+    if (title) {
+      try {
+        const newFileName = `${title}.md`
+        const newFilePath = path.join(path.dirname(id), newFileName)
+        
+        if (id !== newFilePath) {
+          await fs.rename(id, newFilePath)
+          console.log('文件已重命名:', newFilePath)
+        }
+      } catch (error) {
+        console.error('重命名文件失败:', error)
+        // 继续执行，因为重命名失败不影响内容更新
+      }
+    }
+
+    // 获取更新后的文件信息
+    try {
+      const stats = await fs.stat(id)
+      const relativePath = path.relative(NOTEBOOK_PATH, id)
+      const currentNotebookId = path.dirname(relativePath).split(path.sep)[0] || 'default'
+
+      const updatedNote = {
+        id: id,
+        title: title || path.basename(id, '.md'),
+        content: content || '',
+        tags: tags || [],
+        notebookId: notebookId || currentNotebookId,
+        timestamp: "just now",
+        preview: (content || '').substring(0, 60) + "...",
+        lastUpdated: stats.mtime.getTime(),
+        filePath: id
+      }
+
+      console.log('更新成功，返回笔记:', updatedNote)
+      return NextResponse.json(updatedNote)
+    } catch (error) {
+      console.error('获取文件信息失败:', error)
+      return NextResponse.json({ error: '无法获取更新后的文件信息' }, { status: 500 })
+    }
   } catch (error) {
     console.error('更新笔记时出错:', error)
     return NextResponse.json({ error: '无法更新笔记' }, { status: 500 })
