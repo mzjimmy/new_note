@@ -22,6 +22,7 @@ import path from "path"
 import { generateTagsFromContent } from "@/lib/llm"
 import { extractFrontmatter, updateFrontmatter } from "@/lib/frontmatter"
 import { Chatbot, Message } from "@/components/chatbot"
+import MemoryProcess from "@/components/MemoryProcess"
 
 // 定义笔记类型
 type Note = {
@@ -126,6 +127,10 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
 
   // 生成标签状态
   const [isGeneratingTags, setIsGeneratingTags] = useState(false)
+
+  // 添加记忆处理状态
+  const [isMemoryProcessOpen, setIsMemoryProcessOpen] = useState(false)
+  const [memoryProcessResult, setMemoryProcessResult] = useState<any>(null)
 
   // 从文件系统加载数据
   useEffect(() => {
@@ -541,6 +546,22 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
     }
   }
 
+  // 处理记忆按钮点击
+  const handleMemoryClick = () => {
+    setIsMemoryProcessOpen(true)
+  }
+  
+  // 处理记忆完成
+  const handleMemoryComplete = (result: any) => {
+    setMemoryProcessResult(result)
+    // 可以在这里添加记忆处理完成后的逻辑
+    toast({
+      title: "记忆处理完成",
+      description: `成功提取 ${result.length} 个知识项`,
+      duration: 3000,
+    })
+  }
+
   if (!editingNote) {
     return <div className="flex items-center justify-center h-screen">加载中...</div>
   }
@@ -571,9 +592,13 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
               </svg>
               <span>{isGeneratingTags ? "生成中..." : "AI 生成"}</span>
             </CustomButton>
-            <CustomButton variant="outline" className="flex items-center space-x-1 px-3 py-1.5 text-sm">
+            <CustomButton 
+              variant="outline" 
+              onClick={handleMemoryClick}
+              className="flex items-center space-x-1 px-3 py-1.5 text-sm"
+            >
               <Clock className="w-4 h-4" />
-              <span>记忆</span>
+              <span>记忆1</span>
             </CustomButton>
           </div>
 
@@ -733,6 +758,14 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
             </div>
           </>
         )}
+
+        {/* 记忆处理模态框 */}
+        <MemoryProcess
+          noteContent={editingNote.content}
+          isOpen={isMemoryProcessOpen}
+          onClose={() => setIsMemoryProcessOpen(false)}
+          onComplete={handleMemoryComplete}
+        />
 
         <Toaster />
       </div>
