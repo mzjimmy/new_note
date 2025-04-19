@@ -349,7 +349,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex h-screen bg-background">
       {/* Left Sidebar */}
       <div className="w-64 border-r flex flex-col">
         <div className="p-4 border-b">
@@ -477,8 +477,8 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Main Content - Notes Grid */}
-      <div className="flex-1 flex flex-col">
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         <div className="p-4 border-b flex items-center justify-between">
           <h2 className="text-lg font-medium">
             {activeFilter
