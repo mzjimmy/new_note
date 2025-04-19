@@ -63,8 +63,8 @@ export function Chatbot({ context }: ChatbotProps) {
   return (
     <div className="fixed bottom-4 right-4 z-50">
       {isOpen ? (
-        <Card className="w-[400px] h-[600px] flex flex-col">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <Card className="w-[400px] h-[600px] flex flex-col overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 shrink-0">
             <CardTitle>AI 助手</CardTitle>
             <Button
               variant="ghost"
@@ -74,8 +74,8 @@ export function Chatbot({ context }: ChatbotProps) {
               <X className="h-4 w-4" />
             </Button>
           </CardHeader>
-          <CardContent className="flex-1 flex flex-col gap-4">
-            <ScrollArea className="flex-1">
+          <CardContent className="flex-1 flex flex-col gap-4 p-4 h-full overflow-hidden">
+            <ScrollArea className="flex-1 h-[calc(100%-80px)] pr-4">
               <div className="space-y-4">
                 {messages.map((message, index) => (
                   <div
@@ -98,7 +98,7 @@ export function Chatbot({ context }: ChatbotProps) {
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
-            <form onSubmit={handleSubmit} className="flex gap-2">
+            <form onSubmit={handleSubmit} className="flex gap-2 mt-auto">
               <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
