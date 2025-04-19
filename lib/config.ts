@@ -1,1 +1,1 @@
-export const NOTEBOOK_PATH = '/Users/xuezhirong/Documents/Note' 
+export const NOTEBOOK_PATH = "C:/Users/38957/Documents/GitHub/new_note/test"
