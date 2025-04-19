@@ -329,7 +329,14 @@ export default function HomePage() {
 
   // 打开笔记编辑页面
   const openNote = (noteId: string) => {
-    router.push(`/edit/${noteId}`)
+    const note = notes.find(n => n.id === noteId);
+    if (note?.type === 'image') {
+      // 对于图片类型，使用/view路由
+      router.push(`/view/${encodeURIComponent(noteId)}`);
+    } else {
+      // 对于普通笔记，使用/edit路由
+      router.push(`/edit/${encodeURIComponent(noteId)}`);
+    }
   }
 
   return (
@@ -498,7 +505,7 @@ export default function HomePage() {
                   {note.type === 'image' && (
                     <div className="relative w-full h-40 mb-3">
                       <img
-                        src={`/api/images?path=${encodeURIComponent(note.filePath)}`}
+                        src={`/api/images?path=${encodeURIComponent(note.id)}`}
                         alt={note.title}
                         className="absolute inset-0 w-full h-full object-cover rounded-lg"
                       />
