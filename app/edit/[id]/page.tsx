@@ -21,6 +21,7 @@ import { Usable } from "react"
 import path from "path"
 import { generateTagsFromContent } from "@/lib/llm"
 import { extractFrontmatter, updateFrontmatter } from "@/lib/frontmatter"
+import { Chatbot } from "@/components/chatbot"
 
 // 定义笔记类型
 type Note = {
@@ -97,6 +98,7 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
   const [notes, setNotes] = useState<Note[]>([])
   const [availableTags, setAvailableTags] = useState<Tag[]>([])
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
+  const [currentNote, setCurrentNote] = useState<Note | null>(null)
 
   // 初始化一个默认的笔记对象
   const defaultNote: Note = {
@@ -166,6 +168,10 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
         
         console.log('设置编辑笔记:', updatedNote)
         setEditingNote(updatedNote)
+        const noteToSet = notes.find(n => n.id === noteId)
+        if (noteToSet) {
+          setCurrentNote(noteToSet)
+        }
       } catch (error) {
         console.error('加载笔记时出错:', error)
         toast({
@@ -178,7 +184,7 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
     }
 
     loadNote()
-  }, [noteId, router])
+  }, [noteId, router, notes])
 
   // 自动保存功能
   useEffect(() => {
@@ -540,170 +546,176 @@ export default function EditPage({ params }: { params: Usable<{ id: string }> })
   }
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      <div className="flex items-center p-4 border-b">
-        <CustomButton variant="ghost" onClick={cancelEditing} className="mr-2 p-2">
-          <ArrowLeft className="h-5 w-5" />
-        </CustomButton>
+    <div className="min-h-screen bg-background">
+      <div className="flex flex-col h-screen bg-white">
+        <div className="flex items-center p-4 border-b">
+          <CustomButton variant="ghost" onClick={cancelEditing} className="mr-2 p-2">
+            <ArrowLeft className="h-5 w-5" />
+          </CustomButton>
 
-        <div className="flex space-x-2">
-          <CustomButton 
-            variant="outline" 
-            onClick={handleGenerateTags}
-            disabled={isGeneratingTags}
-            className="flex items-center space-x-1 px-3 py-1.5 text-sm"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path
-                d="M12 4V20M4 12H20"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span>{isGeneratingTags ? "生成中..." : "AI 生成"}</span>
-          </CustomButton>
-          <CustomButton variant="outline" className="flex items-center space-x-1 px-3 py-1.5 text-sm">
-            <Clock className="w-4 h-4" />
-            <span>记忆</span>
-          </CustomButton>
+          <div className="flex space-x-2">
+            <CustomButton 
+              variant="outline" 
+              onClick={handleGenerateTags}
+              disabled={isGeneratingTags}
+              className="flex items-center space-x-1 px-3 py-1.5 text-sm"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M12 4V20M4 12H20"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span>{isGeneratingTags ? "生成中..." : "AI 生成"}</span>
+            </CustomButton>
+            <CustomButton variant="outline" className="flex items-center space-x-1 px-3 py-1.5 text-sm">
+              <Clock className="w-4 h-4" />
+              <span>记忆</span>
+            </CustomButton>
+          </div>
+
+          <div className="ml-4 font-medium">
+            <input
+              type="text"
+              value={editingNote.title}
+              onChange={(e) => updateNoteTitle(e.target.value)}
+              className="border rounded-full px-3 py-1 text-sm w-40 focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
+            />
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            {lastSaved && <span className="text-xs text-gray-500">{lastSaved}</span>}
+            <div className="flex space-x-2">
+              <CustomButton variant="outline" onClick={cancelEditing} className="px-3 py-1.5 text-sm">
+                <X className="w-4 h-4 mr-1" />
+                <span>取消</span>
+              </CustomButton>
+              <CustomButton onClick={saveNote} className="px-3 py-1.5 text-sm">
+                <Save className="w-4 h-4 mr-1" />
+                <span>保存</span>
+              </CustomButton>
+            </div>
+          </div>
         </div>
 
-        <div className="ml-4 font-medium">
-          <input
-            type="text"
-            value={editingNote.title}
-            onChange={(e) => updateNoteTitle(e.target.value)}
-            className="border rounded-full px-3 py-1 text-sm w-40 focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
+        <div className="flex-1 overflow-auto p-6">
+          {/* 笔记本选择 */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1 text-gray-700">笔记本</label>
+            <select
+              value={editingNote.notebookId}
+              onChange={(e) => updateNoteNotebook(e.target.value)}
+              className="w-full rounded-full border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
+            >
+              {notebooks.map((notebook) => (
+                <option key={notebook.id} value={notebook.id}>
+                  {notebook.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 标签区域 */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {editingNote?.tags?.map((tag) => (
+              <div key={tag} className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">{tag}</span>
+                <button
+                  onClick={() => removeTagFromNote(tag)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center">
+              <select
+                className="border rounded-full px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    addTagToNote(e.target.value)
+                    e.target.value = ""
+                  }
+                }}
+              >
+                <option value="">添加标签...</option>
+                {availableTags
+                  .filter((tag) => !editingNote.tags.includes(tag.name))
+                  .map((tag) => (
+                    <option key={tag.id} value={tag.name}>
+                      {tag.name}
+                    </option>
+                  ))}
+              </select>
+              <div className="flex ml-2">
+                <input
+                  type="text"
+                  placeholder="新标签"
+                  value={newTag}
+                  onChange={(e) => setNewTag(e.target.value)}
+                  className="w-24 text-sm rounded-l-full border border-r-0 px-3 py-1 focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      addNewTag()
+                    }
+                  }}
+                />
+                <button
+                  onClick={addNewTag}
+                  className="rounded-r-full border border-l-0 px-2 py-1 bg-gray-100 hover:bg-gray-200"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 笔记内容 */}
+          <textarea
+            value={editingNote.content}
+            onChange={(e) => updateNoteContent(e.target.value)}
+            className="w-full h-[calc(100%-120px)] border rounded-2xl p-4 font-mono text-sm resize-none focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
+            placeholder="在此输入笔记内容..."
           />
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          {lastSaved && <span className="text-xs text-gray-500">{lastSaved}</span>}
-          <div className="flex space-x-2">
-            <CustomButton variant="outline" onClick={cancelEditing} className="px-3 py-1.5 text-sm">
-              <X className="w-4 h-4 mr-1" />
-              <span>取消</span>
-            </CustomButton>
-            <CustomButton onClick={saveNote} className="px-3 py-1.5 text-sm">
-              <Save className="w-4 h-4 mr-1" />
-              <span>保存</span>
-            </CustomButton>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-auto p-6">
-        {/* 笔记本选择 */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1 text-gray-700">笔记本</label>
-          <select
-            value={editingNote.notebookId}
-            onChange={(e) => updateNoteNotebook(e.target.value)}
-            className="w-full rounded-full border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
-          >
-            {notebooks.map((notebook) => (
-              <option key={notebook.id} value={notebook.id}>
-                {notebook.name}
-              </option>
-            ))}
-          </select>
+        <div className="p-4 border-t">
+          <CustomButton variant="destructive" onClick={deleteNote} className="px-3 py-1.5 text-sm">
+            <Trash className="h-4 w-4 mr-2" />
+            <span>删除</span>
+          </CustomButton>
         </div>
 
-        {/* 标签区域 */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          {editingNote?.tags?.map((tag) => (
-            <div key={tag} className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">{tag}</span>
-              <button
-                onClick={() => removeTagFromNote(tag)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          <div className="flex items-center">
-            <select
-              className="border rounded-full px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  addTagToNote(e.target.value)
-                  e.target.value = ""
-                }
-              }}
-            >
-              <option value="">添加标签...</option>
-              {availableTags
-                .filter((tag) => !editingNote.tags.includes(tag.name))
-                .map((tag) => (
-                  <option key={tag.id} value={tag.name}>
-                    {tag.name}
-                  </option>
-                ))}
-            </select>
-            <div className="flex ml-2">
-              <input
-                type="text"
-                placeholder="新标签"
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                className="w-24 text-sm rounded-l-full border border-r-0 px-3 py-1 focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    addNewTag()
-                  }
-                }}
-              />
-              <button
-                onClick={addNewTag}
-                className="rounded-r-full border border-l-0 px-2 py-1 bg-gray-100 hover:bg-gray-200"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
+        {/* 删除确认对话框 */}
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="sm:max-w-md rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>删除笔记</DialogTitle>
+              <DialogDescription>您确定要删除这个笔记吗？此操作无法撤销。</DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4">
+              <CustomButton variant="outline" onClick={() => setDialogOpen(false)} className="px-3 py-1.5 text-sm">
+                取消
+              </CustomButton>
+              <CustomButton variant="destructive" onClick={deleteNote} className="px-3 py-1.5 text-sm">
+                删除
+              </CustomButton>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-        {/* 笔记内容 */}
-        <textarea
-          value={editingNote.content}
-          onChange={(e) => updateNoteContent(e.target.value)}
-          className="w-full h-[calc(100%-120px)] border rounded-2xl p-4 font-mono text-sm resize-none focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
-          placeholder="在此输入笔记内容..."
-        />
+        {/* 提示消息 */}
+        <Toaster />
       </div>
 
-      <div className="p-4 border-t">
-        <CustomButton variant="destructive" onClick={deleteNote} className="px-3 py-1.5 text-sm">
-          <Trash className="h-4 w-4 mr-2" />
-          <span>删除</span>
-        </CustomButton>
-      </div>
-
-      {/* 删除确认对话框 */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle>删除笔记</DialogTitle>
-            <DialogDescription>您确定要删除这个笔记吗？此操作无法撤销。</DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-4">
-            <CustomButton variant="outline" onClick={() => setDialogOpen(false)} className="px-3 py-1.5 text-sm">
-              取消
-            </CustomButton>
-            <CustomButton variant="destructive" onClick={deleteNote} className="px-3 py-1.5 text-sm">
-              删除
-            </CustomButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 提示消息 */}
-      <Toaster />
+      {currentNote && (
+        <Chatbot context={`# ${currentNote.title}\n${currentNote.content}`} />
+      )}
     </div>
   )
 }

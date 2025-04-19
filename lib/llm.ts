@@ -12,6 +12,11 @@ export interface LLMResponse {
   }[]
 }
 
+export interface Message {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+}
+
 export async function generateTagsFromContent(content: string): Promise<string[]> {
   console.log("开始生成标签...")
   console.log("输入内容:", content)
@@ -77,6 +82,43 @@ export async function generateTagsFromContent(content: string): Promise<string[]
         stack: error.stack
       })
     }
+    throw error
+  }
+}
+
+export async function chat(messages: Message[], context: string): Promise<string> {
+  try {
+    const requestBody = {
+      model: "Qwen/Qwen2.5-32B-Instruct",
+      messages: [
+        {
+          role: "system",
+          content: `你是一个智能助手。请根据以下上下文信息回答问题：\n${context}`
+        },
+        ...messages
+      ],
+      temperature: 0.7,
+      max_tokens: 1000
+    }
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${API_KEY}`
+      },
+      body: JSON.stringify(requestBody)
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`API 请求失败: ${response.status} - ${errorText}`)
+    }
+
+    const data: LLMResponse = await response.json()
+    return data.choices[0].message.content
+  } catch (error) {
+    console.error("聊天时出错:", error)
     throw error
   }
 } 

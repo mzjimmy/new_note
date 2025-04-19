@@ -11,6 +11,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { NOTEBOOK_PATH } from "@/lib/config"
 import { readMarkdownFiles, readFileContent, writeFileContent, getDirectoryStructure } from "@/lib/fs-utils"
 import path from "path"
+import { Chatbot } from "@/components/chatbot"
 
 // 定义笔记类型
 type Note = {
@@ -133,6 +134,8 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [activeFilter, setActiveFilter] = useState<string | null>(null)
 
+  const [allNotesContent, setAllNotesContent] = useState("")
+
   // 从文件系统加载数据
   useEffect(() => {
     const loadData = async () => {
@@ -171,6 +174,12 @@ export default function HomePage() {
         setAvailableTags(newTags)
         
         console.log('数据加载完成')
+
+        // 获取所有笔记内容作为上下文
+        const allContent = notes
+          .map((note: Note) => `# ${note.title}\n${note.content}`)
+          .join("\n\n")
+        setAllNotesContent(allContent)
       } catch (error) {
         console.error('加载数据时出错:', error)
         toast({
@@ -340,7 +349,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex h-screen bg-white text-gray-900">
+    <div className="min-h-screen bg-background">
       {/* Left Sidebar */}
       <div className="w-64 border-r flex flex-col">
         <div className="p-4 border-b">
@@ -554,7 +563,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* 提示消息 */}
+      <Chatbot context={allNotesContent} />
       <Toaster />
     </div>
   )
